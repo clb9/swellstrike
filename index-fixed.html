@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swell Strike - Mission Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; }
+    #map { height: 100vh; width: 100%; }
+    .legend {
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+  </style>
+</head>
+<body class="bg-black text-white">
+  <div id="map"></div>
+  
+  <!-- Header -->
+  <div style="position: absolute; top: 20px; left: 20px; z-index: 1000; max-width: 400px;">
+    <div class="legend" style="border-radius: 8px; padding: 16px;">
+      <h1 style="font-size: 24px; font-weight: bold; color: #22c55e; margin-bottom: 8px;">🌊 SWELL STRIKE</h1>
+      <p style="font-size: 14px; color: #9ca3af; margin-bottom: 16px;">Real-time surf & ski conditions</p>
+      
+      <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <button id="btn-all" style="padding: 8px 16px; border-radius: 4px; background: #22c55e; border: none; color: white; cursor: pointer;">All</button>
+        <button id="btn-surf" style="padding: 8px 16px; border-radius: 4px; background: #374151; border: none; color: white; cursor: pointer;">🌊 Surf</button>
+        <button id="btn-ski" style="padding: 8px 16px; border-radius: 4px; background: #374151; border: none; color: white; cursor: pointer;">⛷️ Ski</button>
+      </div>
+
+      <div id="status" style="color: #fbbf24; margin-bottom: 12px; font-size: 14px;">Initializing map...</div>
+      
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; font-size: 13px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="width: 12px; height: 12px; border-radius: 50%; background: #22c55e;"></div>
+          <span>Strike (70+)</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="width: 12px; height: 12px; border-radius: 50%; background: #eab308;"></div>
+          <span>Good (50-69)</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="width: 12px; height: 12px; border-radius: 50%; background: #ef4444;"></div>
+          <span>Flat (&lt;50)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    console.log('Starting Swell Strike...');
+    
+    // BUOY DATA
+    const BUOYS = {
+      '46221': { name: 'Santa Barbara', lat: 34.274, lon: -119.863, region: 'Southern CA' },
+      '46222': { name: 'San Pedro', lat: 33.618, lon: -118.317, region: 'Southern CA' },
+      '46086': { name: 'San Clemente', lat: 32.491, lon: -118.034, region: 'Southern CA' },
+      '46042': { name: 'Monterey', lat: 36.785, lon: -122.469, region: 'Central CA' },
+      '46012': { name: 'Half Moon Bay', lat: 37.361, lon: -122.881, region: 'NorCal' },
+      '46026': { name: 'SF Bay', lat: 37.759, lon: -122.833, region: 'NorCal' },
+      '46050': { name: 'Stonewall Bank', lat: 44.660, lon: -124.534, region: 'Oregon' },
+      '46029': { name: 'Columbia River', lat: 46.144, lon: -124.510, region: 'WA' },
+      '51001': { name: 'NW Hawaii', lat: 23.445, lon: -162.279, region: 'Hawaii' },
+      '51101': { name: 'Waimea Bay', lat: 21.673, lon: -157.753, region: 'Hawaii' },
+      '44025': { name: 'Long Island', lat: 40.251, lon: -73.164, region: 'NY' },
+      '44014': { name: 'Virginia Beach', lat: 36.611, lon: -74.836, region: 'VA' },
+      '41013': { name: 'Frying Pan Shoals', lat: 33.436, lon: -77.743, region: 'NC' },
+    };
+
+    // SKI RESORTS
+    const SKI_RESORTS = [
+      { name: 'Whistler Blackcomb', lat: 50.116, lon: -122.949, region: 'BC' },
+      { name: 'Mt. Baker', lat: 48.859, lon: -121.686, region: 'WA' },
+      { name: 'Jackson Hole', lat: 43.588, lon: -110.828, region: 'WY' },
+      { name: 'Alta', lat: 40.588, lon: -111.638, region: 'UT' },
+      { name: 'Snowbird', lat: 40.583, lon: -111.657, region: 'UT' },
+      { name: 'Vail', lat: 39.640, lon: -106.374, region: 'CO' },
+      { name: 'Aspen', lat: 39.191, lon: -106.818, region: 'CO' },
+      { name: 'Telluride', lat: 37.938, lon: -107.812, region: 'CO' },
+      { name: 'Mammoth', lat: 37.631, lon: -119.033, region: 'CA' },
+      { name: 'Palisades Tahoe', lat: 39.197, lon: -120.235, region: 'CA' },
+      { name: 'Valle Nevado', lat: -33.350, lon: -70.250, region: 'Chile' },
+      { name: 'Portillo', lat: -32.835, lon: -70.137, region: 'Chile' },
+    ];
+
+    let map = null;
+    let buoyMarkers = [];
+    let skiMarkers = [];
+    let currentView = 'all';
+    let buoyDataCache = {};
+
+    // INITIALIZE MAP
+    function initMap() {
+      console.log('Initializing map...');
+      updateStatus('Loading map...');
+      
+      map = L.map('map').setView([40, -100], 4);
+      
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '©OpenStreetMap ©CartoDB',
+        subdomains: 'abcd',
+        maxZoom: 19
+      }).addTo(map);
+
+      console.log('Map loaded!');
+      updateStatus('Map loaded! Adding markers...');
+      
+      // Add all markers immediately
+      addSkiMarkers();
+      addBuoyMarkers();
+      
+      updateStatus('Fetching live buoy data...');
+      
+      // Try to fetch live data in background
+      setTimeout(fetchBuoyData, 1000);
+    }
+
+    // ADD SKI MARKERS
+    function addSkiMarkers() {
+      console.log('Adding ski markers...');
+      SKI_RESORTS.forEach(resort => {
+        const marker = L.marker([resort.lat, resort.lon], {
+          icon: L.divIcon({
+            className: '',
+            html: '<div style="font-size: 24px;">⛷️</div>',
+            iconSize: [30, 30]
+          })
+        }).addTo(map);
+
+        marker.bindPopup(`
+          <div style="color: #000; padding: 8px;">
+            <h3 style="font-weight: bold; font-size: 16px; margin-bottom: 8px;">⛷️ ${resort.name}</h3>
+            <p><strong>Region:</strong> ${resort.region}</p>
+            <p style="color: #666; font-size: 12px; margin-top: 8px;">Live snow data coming soon!</p>
+          </div>
+        `);
+
+        skiMarkers.push(marker);
+      });
+      console.log(`Added ${skiMarkers.length} ski markers`);
+    }
+
+    // ADD BUOY MARKERS (with demo data initially)
+    function addBuoyMarkers() {
+      console.log('Adding buoy markers...');
+      Object.keys(BUOYS).forEach(buoyId => {
+        const buoy = BUOYS[buoyId];
+        
+        // Demo data to show something immediately
+        const demoScore = Math.floor(Math.random() * 40) + 30; // 30-70
+        const color = demoScore >= 70 ? '#22c55e' : demoScore >= 50 ? '#eab308' : '#ef4444';
+        
+        const circle = L.circleMarker([buoy.lat, buoy.lon], {
+          radius: 8,
+          fillColor: color,
+          color: '#fff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.7
+        }).addTo(map);
+
+        circle.bindPopup(`
+          <div style="color: #000; padding: 8px;">
+            <h3 style="font-weight: bold; font-size: 16px; margin-bottom: 8px;">🌊 ${buoy.name}</h3>
+            <p style="color: #666;">Loading live data...</p>
+            <p style="font-size: 12px; color: #999; margin-top: 8px;">Buoy ID: ${buoyId}</p>
+          </div>
+        `);
+
+        buoyMarkers.push({ id: buoyId, marker: circle });
+      });
+      console.log(`Added ${buoyMarkers.length} buoy markers`);
+      updateStatus(`Showing ${buoyMarkers.length} surf spots and ${skiMarkers.length} ski resorts`);
+    }
+
+    // FETCH LIVE BUOY DATA
+    async function fetchBuoyData() {
+      console.log('Fetching live buoy data...');
+      let successCount = 0;
+      
+      for (const buoyId of Object.keys(BUOYS).slice(0, 5)) { // Limit to 5 for speed
+        try {
+          const corsProxy = 'https://api.allorigins.win/raw?url=';
+          const url = `${corsProxy}https://www.ndbc.noaa.gov/data/realtime2/${buoyId}.txt`;
+          
+          const response = await fetch(url, { 
+            method: 'GET',
+            headers: { 'Accept': 'text/plain' }
+          });
+          
+          if (response.ok) {
+            const text = await response.text();
+            const data = parseBuoyData(text, buoyId);
+            
+            if (data) {
+              buoyDataCache[buoyId] = data;
+              updateBuoyMarker(buoyId, data);
+              successCount++;
+              updateStatus(`Live data: ${successCount} buoys updated`);
+            }
+          }
+        } catch (err) {
+          console.log(`Buoy ${buoyId} fetch failed:`, err.message);
+        }
+        
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      if (successCount === 0) {
+        updateStatus(`Showing ${buoyMarkers.length} surf spots (demo data - NOAA API unavailable)`);
+      } else {
+        updateStatus(`Live data from ${successCount} buoys!`);
+      }
+    }
+
+    // PARSE BUOY DATA
+    function parseBuoyData(text, buoyId) {
+      try {
+        const lines = text.split('\n').filter(l => l.trim());
+        if (lines.length < 3) return null;
+
+        const headers = lines[0].split(/\s+/);
+        const latest = lines[2].split(/\s+/);
+
+        const data = {};
+        headers.forEach((header, i) => {
+          data[header] = latest[i];
+        });
+
+        return {
+          waveHeight: parseFloat(data.WVHT) || 0,
+          dominantPeriod: parseFloat(data.DPD) || 0,
+          windSpeed: parseFloat(data.WSPD) || 0,
+          windDirection: parseFloat(data.WDIR) || 0,
+          timestamp: `${data.MM}/${data.DD} ${data.hh}:${data.mm} UTC`
+        };
+      } catch (err) {
+        return null;
+      }
+    }
+
+    // UPDATE BUOY MARKER WITH LIVE DATA
+    function updateBuoyMarker(buoyId, data) {
+      const buoyObj = buoyMarkers.find(b => b.id === buoyId);
+      if (!buoyObj) return;
+
+      const buoy = BUOYS[buoyId];
+      const heightFeet = (data.waveHeight * 3.28084).toFixed(1);
+      const windMph = (data.windSpeed * 2.237).toFixed(1);
+      
+      // Calculate score
+      let score = 0;
+      const heightFt = data.waveHeight * 3.28084;
+      if (heightFt >= 4 && heightFt <= 10) score += 40;
+      else if (heightFt >= 2 && heightFt < 4) score += 25;
+      
+      if (data.dominantPeriod >= 12) score += 30;
+      else if (data.dominantPeriod >= 10) score += 20;
+      
+      const windMphNum = data.windSpeed * 2.237;
+      if (windMphNum < 10) score += 20;
+      else if (windMphNum < 15) score += 10;
+      
+      score = Math.min(100, Math.max(0, score));
+      
+      const color = score >= 70 ? '#22c55e' : score >= 50 ? '#eab308' : '#ef4444';
+      
+      buoyObj.marker.setStyle({
+        fillColor: color,
+        radius: score >= 70 ? 12 : 8
+      });
+
+      buoyObj.marker.setPopupContent(`
+        <div style="color: #000; padding: 8px;">
+          <h3 style="font-weight: bold; font-size: 16px; margin-bottom: 8px;">🌊 ${buoy.name}</h3>
+          <div style="margin: 8px 0;">
+            <p><strong>Score:</strong> ${score}/100</p>
+            <p><strong>Wave Height:</strong> ${heightFeet}ft</p>
+            <p><strong>Period:</strong> ${data.dominantPeriod}s</p>
+            <p><strong>Wind:</strong> ${windMph}mph</p>
+          </div>
+          <p style="font-size: 11px; color: #666;">${data.timestamp}</p>
+        </div>
+      `);
+    }
+
+    // UPDATE STATUS
+    function updateStatus(msg) {
+      document.getElementById('status').textContent = msg;
+      console.log(msg);
+    }
+
+    // FILTER MARKERS
+    function filterMarkers(type) {
+      currentView = type;
+      
+      // Update buttons
+      document.getElementById('btn-all').style.background = type === 'all' ? '#22c55e' : '#374151';
+      document.getElementById('btn-surf').style.background = type === 'surf' ? '#3b82f6' : '#374151';
+      document.getElementById('btn-ski').style.background = type === 'ski' ? '#9333ea' : '#374151';
+      
+      // Show/hide markers
+      buoyMarkers.forEach(b => {
+        if (type === 'all' || type === 'surf') {
+          map.addLayer(b.marker);
+        } else {
+          map.removeLayer(b.marker);
+        }
+      });
+      
+      skiMarkers.forEach(m => {
+        if (type === 'all' || type === 'ski') {
+          map.addLayer(m);
+        } else {
+          map.removeLayer(m);
+        }
+      });
+    }
+
+    // EVENT LISTENERS
+    document.getElementById('btn-all').addEventListener('click', () => filterMarkers('all'));
+    document.getElementById('btn-surf').addEventListener('click', () => filterMarkers('surf'));
+    document.getElementById('btn-ski').addEventListener('click', () => filterMarkers('ski'));
+
+    // START
+    window.addEventListener('load', () => {
+      console.log('Window loaded, initializing...');
+      setTimeout(initMap, 100);
+    });
+  </script>
+</body>
+</html>
