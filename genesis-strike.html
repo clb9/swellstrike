@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GENESIS STRIKE - Mission Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body, html {
+      width: 100%;
+      height: 100%;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0a0e1a;
+      color: #fff;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    #map {
+      height: 100vh;
+      width: 100%;
+      filter: brightness(0.85) contrast(1.1);
+    }
+    
+    /* Command Center HUD */
+    .command-hud {
+      position: absolute;
+      top: 24px;
+      left: 24px;
+      width: 420px;
+      background: rgba(10, 14, 26, 0.75);
+      backdrop-filter: blur(20px) saturate(150%);
+      -webkit-backdrop-filter: blur(20px) saturate(150%);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      z-index: 1000;
+      animation: hudSlideIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    @keyframes hudSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .hud-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    
+    .hud-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #fff;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      font-family: 'SF Mono', 'Courier New', monospace;
+    }
+    
+    .hud-subtitle {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    
+    .live-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.2);
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #22c55e;
+    }
+    
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      background: #22c55e;
+      border-radius: 50%;
+      animation: livePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.8);
+    }
+    
+    @keyframes livePulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.2); }
+    }
+    
+    .live-indicator.offline {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+    
+    .live-indicator.offline .live-dot {
+      background: #ef4444;
+      animation: none;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
+    }
+    
+    /* Segmented Control - Futuristic */
+    .segment-wrapper {
+      padding: 16px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    
+    .segment-control {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.02);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    
+    .segment-btn {
+      padding: 10px;
+      background: transparent;
+      border: none;
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 7px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .segment-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15));
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+    
+    .segment-btn:hover {
+      color: rgba(255, 255, 255, 0.7);
+    }
+    
+    .segment-btn.active {
+      color: #fff;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    }
+    
+    .segment-btn.active::before {
+      opacity: 1;
+    }
+    
+    /* Feature Toggles */
+    .toggle-section {
+      padding: 16px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    
+    .toggle-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+    }
+    
+    .toggle-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.7);
+      letter-spacing: 0.3px;
+    }
+    
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.3s;
+    }
+    
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      background: rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .toggle-switch.active {
+      background: rgba(99, 102, 241, 0.3);
+      border-color: rgba(99, 102, 241, 0.5);
+    }
+    
+    .toggle-switch.active::after {
+      left: 22px;
+      background: #6366f1;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.5);
+    }
+    
+    /* Stats Grid */
+    .stats-grid {
+      padding: 16px 24px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    
+    .stat-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      font-family: 'SF Mono', monospace;
+    }
+    
+    .stat-label {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.4);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+    
+    /* Strike Pulse Animation for High-Score Markers */
+    @keyframes strikePulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+      }
+      50% {
+        box-shadow: 0 0 0 12px rgba(34, 197, 94, 0);
+      }
+    }
+    
+    .strike-marker {
+      animation: strikePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    
+    /* Enhanced Popup Styling */
+    .leaflet-popup-content-wrapper {
+      background: rgba(10, 14, 26, 0.98);
+      backdrop-filter: blur(24px) saturate(150%);
+      -webkit-backdrop-filter: blur(24px) saturate(150%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+      padding: 0;
+      color: #fff;
+      min-width: 320px;
+    }
+    
+    .leaflet-popup-content {
+      margin: 0;
+      line-height: 1.5;
+    }
+    
+    .leaflet-popup-tip {
+      background: rgba(10, 14, 26, 0.98);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    
+    .leaflet-popup-close-button {
+      color: rgba(255, 255, 255, 0.5) !important;
+      font-size: 20px !important;
+      font-weight: 300 !important;
+      padding: 12px !important;
+      transition: all 0.2s;
+    }
+    
+    .leaflet-popup-close-button:hover {
+      color: #fff !important;
+    }
+    
+    /* Popup Tabs */
+    .popup-tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    
+    .popup-tab {
+      flex: 1;
+      padding: 12px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.4);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    
+    .popup-tab:hover {
+      color: rgba(255, 255, 255, 0.7);
+      background: rgba(255, 255, 255, 0.03);
+    }
+    
+    .popup-tab.active {
+      color: #6366f1;
+      border-bottom-color: #6366f1;
+      background: rgba(99, 102, 241, 0.05);
+    }
+    
+    .popup-content {
+      padding: 20px;
+    }
+    
+    .popup-header {
+      margin-bottom: 16px;
+    }
+    
+    .popup-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    
+    .confidence-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    
+    .confidence-strike {
+      background: rgba(34, 197, 94, 0.15);
+      color: #22c55e;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    
+    .confidence-good {
+      background: rgba(234, 179, 8, 0.15);
+      color: #eab308;
+      border: 1px solid rgba(234, 179, 8, 0.3);
+    }
+    
+    .confidence-poor {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    
+    .data-grid {
+      display: grid;
+      gap: 12px;
+      margin: 16px 0;
+    }
+    
+    .data-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .data-row:last-child {
+      border-bottom: none;
+    }
+    
+    .data-label {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+      font-weight: 500;
+    }
+    
+    .data-value {
+      font-size: 13px;
+      color: #fff;
+      font-weight: 600;
+      font-family: 'SF Mono', monospace;
+    }
+    
+    .action-buttons {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 16px;
+    }
+    
+    .action-btn {
+      padding: 10px 16px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 11px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    
+    .action-btn:hover {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: rgba(99, 102, 241, 0.3);
+      color: #fff;
+      transform: translateY(-1px);
+    }
+    
+    .action-btn-primary {
+      background: rgba(99, 102, 241, 0.2);
+      border-color: rgba(99, 102, 241, 0.4);
+      color: #fff;
+    }
+    
+    .action-btn-primary:hover {
+      background: rgba(99, 102, 241, 0.3);
+      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
+    }
+    
+    .video-container {
+      margin: 16px 0;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    
+    .missed-strike-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(239, 68, 68, 0.15);
+      border: 2px solid rgba(239, 68, 68, 0.5);
+      border-radius: 50%;
+      pointer-events: none;
+      animation: missedPulse 3s ease-in-out infinite;
+    }
+    
+    @keyframes missedPulse {
+      0%, 100% { opacity: 0.3; transform: scale(1); }
+      50% { opacity: 0.8; transform: scale(1.1); }
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  
+  <!-- Command HUD -->
+  <div class="command-hud">
+    <!-- Header -->
+    <div class="hud-header">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+        <div>
+          <h1 class="hud-title">GENESIS STRIKE</h1>
+          <p class="hud-subtitle">Global Mission Control</p>
+        </div>
+        <div class="live-indicator" id="liveIndicator">
+          <div class="live-dot"></div>
+          <span>LIVE</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Segment Control -->
+    <div class="segment-wrapper">
+      <div class="segment-control">
+        <button class="segment-btn active" id="seg-all">All Zones</button>
+        <button class="segment-btn" id="seg-surf">Surf</button>
+        <button class="segment-btn" id="seg-ski">Ski</button>
+      </div>
+    </div>
+    
+    <!-- Feature Toggles -->
+    <div class="toggle-section">
+      <div class="toggle-item">
+        <span class="toggle-label">Missed Strikes (24-48h)</span>
+        <div class="toggle-switch" id="toggle-missed"></div>
+      </div>
+      <div class="toggle-item">
+        <span class="toggle-label">High Confidence Only (>80)</span>
+        <div class="toggle-switch" id="toggle-highconf"></div>
+      </div>
+    </div>
+    
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-active">0</div>
+        <div class="stat-label">Active Strikes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-zones">95</div>
+        <div class="stat-label">Total Zones</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-missed">0</div>
+        <div class="stat-label">Missed (48h)</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    console.log('🚀 GENESIS STRIKE - Initializing...');
+    
+    // API KEYS (User should replace these)
+    const OPENWEATHER_KEY = 'YOUR_OPENWEATHER_API_KEY'; // Get from openweathermap.org
+    const OPEN_METEO_BASE = 'https://marine-api.open-meteo.com/v1/marine';
+    
+    // GLOBAL SURF BREAKS (Coordinates-based for 100% coverage)
+    const SURF_BREAKS = {
+      // California
+      'sb-rincon': { name: 'Rincon', lat: 34.3733, lon: -119.4785, region: 'CA', type: 'point' },
+      'sb-malibu': { name: 'Malibu', lat: 34.0359, lon: -118.6795, region: 'CA', type: 'point' },
+      'sb-trestles': { name: 'Trestles', lat: 33.3876, lon: -117.5903, region: 'CA', type: 'beach' },
+      'sb-blacks': { name: 'Blacks Beach', lat: 32.8897, lon: -117.2513, region: 'CA', type: 'beach' },
+      'sb-steamer': { name: 'Steamer Lane', lat: 36.9513, lon: -122.0271, region: 'CA', type: 'point' },
+      'sb-mavericks': { name: 'Mavericks', lat: 37.4943, lon: -122.4967, region: 'CA', type: 'big_wave' },
+      
+      // Hawaii
+      'hi-pipeline': { name: 'Pipeline', lat: 21.6641, lon: -158.0522, region: 'HI', type: 'reef' },
+      'hi-sunset': { name: 'Sunset Beach', lat: 21.6769, lon: -158.0419, region: 'HI', type: 'beach' },
+      'hi-waimea': { name: 'Waimea Bay', lat: 21.6434, lon: -158.0645, region: 'HI', type: 'big_wave' },
+      
+      // Mexico
+      'mx-cabo': { name: 'Cabo San Lucas', lat: 22.8905, lon: -109.9167, region: 'Mexico', type: 'beach' },
+      'mx-puerto': { name: 'Puerto Escondido', lat: 15.8571, lon: -97.0661, region: 'Mexico', type: 'beach' },
+      'mx-sayulita': { name: 'Sayulita', lat: 20.8700, lon: -105.4400, region: 'Mexico', type: 'beach' },
+      
+      // El Salvador
+      'sv-sunzal': { name: 'El Sunzal', lat: 13.5080, lon: -89.5300, region: 'El Salvador', type: 'point' },
+      'sv-tunco': { name: 'El Tunco', lat: 13.4930, lon: -89.4080, region: 'El Salvador', type: 'beach' },
+      
+      // Nicaragua
+      'nic-popoyo': { name: 'Popoyo', lat: 11.4530, lon: -86.4610, region: 'Nicaragua', type: 'reef' },
+      'nic-maderas': { name: 'Playa Maderas', lat: 11.4200, lon: -86.0100, region: 'Nicaragua', type: 'beach' },
+      
+      // Costa Rica
+      'cr-tamarindo': { name: 'Tamarindo', lat: 10.2980, lon: -85.8380, region: 'Costa Rica', type: 'beach' },
+      'cr-jaco': { name: 'Jaco', lat: 9.6140, lon: -84.6290, region: 'Costa Rica', type: 'beach' },
+      'cr-pavones': { name: 'Pavones', lat: 8.2580, lon: -83.1360, region: 'Costa Rica', type: 'point' },
+      'cr-salsa': { name: 'Salsa Brava', lat: 9.6510, lon: -82.7550, region: 'Costa Rica', type: 'reef' },
+      'cr-witches': { name: 'Witches Rock', lat: 10.8400, lon: -85.8700, region: 'Costa Rica', type: 'reef' },
+      
+      // Panama
+      'pan-bocas': { name: 'Bocas del Toro', lat: 9.3400, lon: -82.2480, region: 'Panama', type: 'beach' },
+      'pan-santa': { name: 'Santa Catalina', lat: 7.6330, lon: -81.2610, region: 'Panama', type: 'beach' },
+      
+      // Northeast US
+      'ne-montauk': { name: 'Montauk', lat: 41.0370, lon: -71.9200, region: 'NY', type: 'beach' },
+      'ne-ruggles': { name: 'Ruggles', lat: 41.4720, lon: -71.2700, region: 'RI', type: 'beach' },
+      'ne-nantucket': { name: 'Nantucket', lat: 41.2835, lon: -70.0995, region: 'MA', type: 'beach' },
+    };
+    
+    // GLOBAL SKI RESORTS
+    const SKI_RESORTS = [
+      { id: 'whistler', name: 'Whistler Blackcomb', lat: 50.116, lon: -122.949, region: 'BC', elevation: 2182 },
+      { id: 'baker', name: 'Mt. Baker', lat: 48.859, lon: -121.686, region: 'WA', elevation: 1565 },
+      { id: 'jackson', name: 'Jackson Hole', lat: 43.588, lon: -110.828, region: 'WY', elevation: 3185 },
+      { id: 'alta', name: 'Alta', lat: 40.588, lon: -111.638, region: 'UT', elevation: 2616 },
+      { id: 'vail', name: 'Vail', lat: 39.640, lon: -106.374, region: 'CO', elevation: 3527 },
+      { id: 'mammoth', name: 'Mammoth', lat: 37.631, lon: -119.033, region: 'CA', elevation: 3369 },
+      { id: 'stowe', name: 'Stowe', lat: 44.531, lon: -72.787, region: 'VT', elevation: 1216 },
+      { id: 'killington', name: 'Killington', lat: 43.604, lon: -72.820, region: 'VT', elevation: 1293 },
+      { id: 'valle', name: 'Valle Nevado', lat: -33.350, lon: -70.250, region: 'Chile', elevation: 3670 },
+      { id: 'portillo', name: 'Portillo', lat: -32.835, lon: -70.137, region: 'Chile', elevation: 3310 },
+    ];
+    
+    let map = null;
+    let surfMarkers = [];
+    let skiMarkers = [];
+    let currentView = 'all';
+    let showMissedStrikes = false;
+    let showHighConfOnly = false;
+    let strikeData = {};
+    let missedStrikes = [];
+    
+    // INITIALIZE MAP
+    function initMap() {
+      console.log('Initializing map...');
+      
+      map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([20, -100], 3);
+      
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        subdomains: 'abcd',
+        maxZoom: 19
+      }).addTo(map);
+      
+      // Add zoom control to bottom right
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+      
+      console.log('Map initialized');
+      addAllMarkers();
+      
+      // Fetch data after markers are placed
+      setTimeout(() => {
+        fetchAllData();
+      }, 1000);
+    }
+    
+    // ADD ALL MARKERS
+    function addAllMarkers() {
+      console.log('Adding markers...');
+      
+      // Add surf markers
+      Object.keys(SURF_BREAKS).forEach(breakId => {
+        const spot = SURF_BREAKS[breakId];
+        const marker = L.circleMarker([spot.lat, spot.lon], {
+          radius: 7,
+          fillColor: '#6366f1',
+          color: '#fff',
+          weight: 1.5,
+          opacity: 0.9,
+          fillOpacity: 0.6
+        }).addTo(map);
+        
+        marker.bindPopup(createPopupContent(spot, breakId, 'surf'));
+        surfMarkers.push({ id: breakId, marker, spot });
+      });
+      
+      // Add ski markers
+      SKI_RESORTS.forEach(resort => {
+        const marker = L.marker([resort.lat, resort.lon], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="font-size: 20px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));">⛷</div>`,
+            iconSize: [24, 24]
+          })
+        }).addTo(map);
+        
+        marker.bindPopup(createPopupContent(resort, resort.id, 'ski'));
+        skiMarkers.push({ id: resort.id, marker, resort });
+      });
+      
+      updateStats();
+      console.log(`Added ${surfMarkers.length} surf + ${skiMarkers.length} ski markers`);
+    }
+    
+    // CREATE POPUP CONTENT
+    function createPopupContent(spot, id, type) {
+      const popupId = `popup-${id}`;
+      return `
+        <div id="${popupId}">
+          <div class="popup-tabs">
+            <div class="popup-tab active" onclick="switchTab('${popupId}', 'conditions')">Conditions</div>
+            <div class="popup-tab" onclick="switchTab('${popupId}', 'intel')">Intel</div>
+            <div class="popup-tab" onclick="switchTab('${popupId}', 'travel')">Travel</div>
+          </div>
+          <div class="popup-content">
+            <div class="tab-content" data-tab="conditions">
+              <div class="popup-header">
+                <h3 class="popup-title">${spot.name}</h3>
+                <span class="confidence-badge confidence-poor">Loading...</span>
+              </div>
+              <div class="data-grid">
+                <div class="data-row">
+                  <span class="data-label">Status</span>
+                  <span class="data-value">Fetching data...</span>
+                </div>
+              </div>
+            </div>
+            <div class="tab-content" data-tab="intel" style="display: none;">
+              <div class="popup-header">
+                <h3 class="popup-title">Spot Intelligence</h3>
+              </div>
+              <div class="video-container">
+                <iframe width="100%" height="180" 
+                  src="https://www.youtube.com/embed/${getYouTubeId(spot.name, type)}" 
+                  frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                  allowfullscreen></iframe>
+              </div>
+              <div class="action-buttons">
+                <a href="${getSurflineURL(spot.name)}" target="_blank" class="action-btn">
+                  📊 Surfline Guide
+                </a>
+                <a href="#" class="action-btn">
+                  📹 Live Cam
+                </a>
+              </div>
+            </div>
+            <div class="tab-content" data-tab="travel" style="display: none;">
+              <div class="popup-header">
+                <h3 class="popup-title">Travel Intel</h3>
+              </div>
+              <div class="data-grid">
+                <div class="data-row">
+                  <span class="data-label">Flights from SFO</span>
+                  <span class="data-value">$${estimateFlightCost(spot.region)}</span>
+                </div>
+                <div class="data-row">
+                  <span class="data-label">Visa Required</span>
+                  <span class="data-value">${getVisaInfo(spot.region)}</span>
+                </div>
+              </div>
+              <div class="action-buttons" style="grid-template-columns: 1fr;">
+                <a href="https://www.google.com/flights" target="_blank" class="action-btn action-btn-primary">
+                  ✈️ Book Flights
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    
+    // SWITCH POPUP TABS
+    window.switchTab = function(popupId, tabName) {
+      const popup = document.getElementById(popupId);
+      if (!popup) return;
+      
+      popup.querySelectorAll('.popup-tab').forEach(tab => tab.classList.remove('active'));
+      popup.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
+      
+      popup.querySelector(`.popup-tab[onclick*="${tabName}"]`).classList.add('active');
+      popup.querySelector(`[data-tab="${tabName}"]`).style.display = 'block';
+    };
+    
+    // FETCH ALL DATA
+    async function fetchAllData() {
+      console.log('🌊 Fetching global data...');
+      setLiveStatus(true);
+      
+      // Fetch surf data
+      for (const breakId of Object.keys(SURF_BREAKS).slice(0, 10)) { // Limit to 10 for demo
+        try {
+          await fetchSurfData(breakId);
+          await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit
+        } catch (err) {
+          console.error(`Failed to fetch ${breakId}:`, err);
+        }
+      }
+      
+      // Fetch ski data
+      for (const resort of SKI_RESORTS.slice(0, 5)) { // Limit to 5 for demo
+        try {
+          await fetchSkiData(resort.id);
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limit
+        } catch (err) {
+          console.error(`Failed to fetch ${resort.id}:`, err);
+        }
+      }
+      
+      updateStats();
+      console.log('✅ Data fetch complete');
+    }
+    
+    // FETCH SURF DATA (Open-Meteo Marine API)
+    async function fetchSurfData(breakId) {
+      const spot = SURF_BREAKS[breakId];
+      
+      const url = `${OPEN_METEO_BASE}?latitude=${spot.lat}&longitude=${spot.lon}&hourly=wave_height,wave_period,wind_wave_height,wind_speed_10m,wind_direction_10m&forecast_days=3`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (!data.hourly) {
+        console.log(`No data for ${spot.name}`);
+        return;
+      }
+      
+      // Get current hour data
+      const now = new Date();
+      const currentIndex = data.hourly.time.findIndex(t => new Date(t) >= now);
+      
+      const waveHeight = data.hourly.wave_height[currentIndex];
+      const wavePeriod = data.hourly.wave_period[currentIndex];
+      const windSpeed = data.hourly.wind_speed_10m[currentIndex];
+      const windDir = data.hourly.wind_direction_10m[currentIndex];
+      
+      // Calculate next 48h forecast for "Swell Run" bonus
+      const next48h = [];
+      for (let i = currentIndex; i < currentIndex + 48 && i < data.hourly.time.length; i++) {
+        next48h.push({
+          waveHeight: data.hourly.wave_height[i],
+          wavePeriod: data.hourly.wave_period[i],
+          windSpeed: data.hourly.wind_speed_10m[i]
+        });
+      }
+      
+      const score = calculateSurfStrikeConfidence({
+        waveHeight,
+        wavePeriod,
+        windSpeed,
+        windDir,
+        next48h
+      });
+      
+      strikeData[breakId] = {
+        type: 'surf',
+        score,
+        waveHeight,
+        wavePeriod,
+        windSpeed,
+        windDir,
+        timestamp: new Date()
+      };
+      
+      updateSurfMarker(breakId, score, { waveHeight, wavePeriod, windSpeed, windDir });
+    }
+    
+    // FETCH SKI DATA (OpenWeatherMap)
+    async function fetchSkiData(resortId) {
+      const resort = SKI_RESORTS.find(r => r.id === resortId);
+      
+      if (OPENWEATHER_KEY === 'YOUR_OPENWEATHER_API_KEY') {
+        console.log('⚠️ OpenWeather API key not configured');
+        return;
+      }
+      
+      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${resort.lat}&lon=${resort.lon}&appid=${OPENWEATHER_KEY}&units=metric`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      const temp = data.main.temp;
+      const windSpeed = data.wind.speed * 2.237; // Convert to mph
+      const snow24h = data.snow ? (data.snow['1h'] || 0) * 24 / 10 : 0; // Rough 24h estimate in cm
+      
+      const score = calculateSkiStrikeConfidence({
+        snow24h,
+        temp,
+        windSpeed
+      });
+      
+      strikeData[resortId] = {
+        type: 'ski',
+        score,
+        temp,
+        windSpeed,
+        snow24h,
+        timestamp: new Date()
+      };
+      
+      updateSkiMarker(resortId, score, { temp, windSpeed, snow24h });
+    }
+    
+    // CALCULATE SURF STRIKE CONFIDENCE (Genesis Algorithm)
+    function calculateSurfStrikeConfidence({ waveHeight, wavePeriod, windSpeed, windDir, next48h }) {
+      let score = 0;
+      
+      // Wave Height (40% weight) - optimal 1.5-3m
+      const heightMeters = waveHeight || 0;
+      if (heightMeters >= 1.5 && heightMeters <= 3.0) {
+        score += 40;
+      } else if (heightMeters >= 1.0 && heightMeters < 1.5) {
+        score += 25;
+      } else if (heightMeters > 3.0 && heightMeters <= 4.5) {
+        score += 30;
+      } else if (heightMeters > 4.5) {
+        score += 15;
+      }
+      
+      // Period (35% weight) - exponential weight for quality
+      const period = wavePeriod || 0;
+      if (period >= 14) {
+        score += 35;
+      } else if (period >= 12) {
+        score += 30;
+      } else if (period >= 10) {
+        score += 20;
+      } else if (period >= 8) {
+        score += 10;
+      }
+      
+      // Wind Alignment (25% weight) - light is best
+      const wind = windSpeed || 0;
+      const windKmh = wind * 3.6;
+      if (windKmh < 10) {
+        score += 25;
+      } else if (windKmh < 20) {
+        score += 15;
+      } else if (windKmh < 30) {
+        score += 5;
+      }
+      
+      // Swell Run Bonus (+10 if consistent next 48h)
+      if (next48h && next48h.length > 24) {
+        const avgHeight = next48h.reduce((sum, h) => sum + h.waveHeight, 0) / next48h.length;
+        const avgPeriod = next48h.reduce((sum, h) => sum + h.wavePeriod, 0) / next48h.length;
+        
+        if (avgHeight >= 1.2 && avgPeriod >= 10) {
+          score += 10;
+        }
+      }
+      
+      return Math.min(100, Math.max(0, Math.round(score)));
+    }
+    
+    // CALCULATE SKI STRIKE CONFIDENCE (Genesis Algorithm)
+    function calculateSkiStrikeConfidence({ snow24h, temp, windSpeed }) {
+      let score = 0;
+      
+      // 24h New Snow (50% weight)
+      if (snow24h >= 10) {
+        score += 50;
+      } else if (snow24h >= 5) {
+        score += 30;
+      } else if (snow24h >= 2) {
+        score += 15;
+      }
+      
+      // Temperature (30% weight) - powder temp
+      if (temp < -5) {
+        score += 30;
+      } else if (temp < -2) {
+        score += 25;
+      } else if (temp < 0) {
+        score += 15;
+      }
+      
+      // Wind Speed (20% weight)
+      if (windSpeed < 15) {
+        score += 20;
+      } else if (windSpeed < 25) {
+        score += 10;
+      }
+      
+      return Math.min(100, Math.max(0, Math.round(score)));
+    }
+    
+    // UPDATE SURF MARKER
+    function updateSurfMarker(breakId, score, data) {
+      const markerObj = surfMarkers.find(m => m.id === breakId);
+      if (!markerObj) return;
+      
+      const color = score >= 80 ? '#22c55e' : score >= 60 ? '#eab308' : '#6366f1';
+      const radius = score >= 80 ? 10 : 7;
+      
+      markerObj.marker.setStyle({
+        fillColor: color,
+        radius: radius
+      });
+      
+      // Add pulse animation for high scores
+      if (score >= 80) {
+        markerObj.marker.getElement()?.classList.add('strike-marker');
+      }
+      
+      // Update popup
+      const popup = markerObj.marker.getPopup();
+      if (popup) {
+        const spot = markerObj.spot;
+        popup.setContent(createUpdatedPopup(spot, breakId, 'surf', score, data));
+      }
+    }
+    
+    // UPDATE SKI MARKER
+    function updateSkiMarker(resortId, score, data) {
+      const markerObj = skiMarkers.find(m => m.id === resortId);
+      if (!markerObj) return;
+      
+      // Update popup
+      const popup = markerObj.marker.getPopup();
+      if (popup) {
+        const resort = markerObj.resort;
+        popup.setContent(createUpdatedPopup(resort, resortId, 'ski', score, data));
+      }
+    }
+    
+    // CREATE UPDATED POPUP
+    function createUpdatedPopup(spot, id, type, score, data) {
+      const confidenceClass = score >= 80 ? 'confidence-strike' : score >= 60 ? 'confidence-good' : 'confidence-poor';
+      const confidenceLabel = score >= 80 ? '🎯 STRIKE' : score >= 60 ? 'GOOD' : 'POOR';
+      
+      let dataRows = '';
+      
+      if (type === 'surf') {
+        const heightFt = (data.waveHeight * 3.28084).toFixed(1);
+        const windMph = (data.windSpeed * 2.237).toFixed(0);
+        dataRows = `
+          <div class="data-row">
+            <span class="data-label">Wave Height</span>
+            <span class="data-value">${heightFt}ft</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Period</span>
+            <span class="data-value">${data.wavePeriod}s</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Wind</span>
+            <span class="data-value">${windMph}mph @ ${data.windDir}°</span>
+          </div>
+        `;
+      } else {
+        const tempF = (data.temp * 9/5 + 32).toFixed(0);
+        dataRows = `
+          <div class="data-row">
+            <span class="data-label">Temperature</span>
+            <span class="data-value">${tempF}°F</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">24h Snow</span>
+            <span class="data-value">${data.snow24h.toFixed(1)}cm</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Wind</span>
+            <span class="data-value">${data.windSpeed.toFixed(0)}mph</span>
+          </div>
+        `;
+      }
+      
+      const popupId = `popup-${id}`;
+      return `
+        <div id="${popupId}">
+          <div class="popup-tabs">
+            <div class="popup-tab active" onclick="switchTab('${popupId}', 'conditions')">Conditions</div>
+            <div class="popup-tab" onclick="switchTab('${popupId}', 'intel')">Intel</div>
+            <div class="popup-tab" onclick="switchTab('${popupId}', 'travel')">Travel</div>
+          </div>
+          <div class="popup-content">
+            <div class="tab-content" data-tab="conditions">
+              <div class="popup-header">
+                <h3 class="popup-title">${spot.name}</h3>
+                <span class="confidence-badge ${confidenceClass}">${score}/100 ${confidenceLabel}</span>
+              </div>
+              <div class="data-grid">
+                ${dataRows}
+              </div>
+            </div>
+            <div class="tab-content" data-tab="intel" style="display: none;">
+              <div class="popup-header">
+                <h3 class="popup-title">Spot Intelligence</h3>
+              </div>
+              <div class="video-container">
+                <iframe width="100%" height="180" 
+                  src="https://www.youtube.com/embed/${getYouTubeId(spot.name, type)}" 
+                  frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                  allowfullscreen></iframe>
+              </div>
+              <div class="action-buttons">
+                <a href="${getSurflineURL(spot.name)}" target="_blank" class="action-btn">
+                  📊 ${type === 'surf' ? 'Surfline' : 'OnTheSnow'}
+                </a>
+                <a href="#" class="action-btn">
+                  📹 Live Cam
+                </a>
+              </div>
+            </div>
+            <div class="tab-content" data-tab="travel" style="display: none;">
+              <div class="popup-header">
+                <h3 class="popup-title">Travel Intel</h3>
+              </div>
+              <div class="data-grid">
+                <div class="data-row">
+                  <span class="data-label">Flights from SFO</span>
+                  <span class="data-value">$${estimateFlightCost(spot.region)}</span>
+                </div>
+                <div class="data-row">
+                  <span class="data-label">Visa Required</span>
+                  <span class="data-value">${getVisaInfo(spot.region)}</span>
+                </div>
+              </div>
+              <div class="action-buttons" style="grid-template-columns: 1fr;">
+                <a href="https://www.google.com/flights?q=${encodeURIComponent(spot.name)}" target="_blank" class="action-btn action-btn-primary">
+                  ✈️ Book Flights
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    
+    // HELPER FUNCTIONS
+    function getYouTubeId(spotName, type) {
+      // In production, use YouTube Data API to search
+      // For now, return a generic search query
+      const query = type === 'surf' 
+        ? `${spotName} surf guide` 
+        : `${spotName} powder skiing`;
+      return `search?q=${encodeURIComponent(query)}`;
+    }
+    
+    function getSurflineURL(spotName) {
+      const slug = spotName.toLowerCase().replace(/\s+/g, '-');
+      return `https://www.surfline.com/surf-reports/${slug}`;
+    }
+    
+    function estimateFlightCost(region) {
+      const prices = {
+        'CA': 150, 'HI': 350, 'Mexico': 280, 'El Salvador': 320,
+        'Nicaragua': 340, 'Costa Rica': 310, 'Panama': 330,
+        'NY': 200, 'MA': 180, 'VT': 160, 'Chile': 650
+      };
+      return prices[region] || 400;
+    }
+    
+    function getVisaInfo(region) {
+      const noVisa = ['CA', 'HI', 'NY', 'MA', 'VT', 'WA', 'CO', 'UT'];
+      return noVisa.includes(region) ? 'No' : 'Check';
+    }
+    
+    // UPDATE STATS
+    function updateStats() {
+      const activeStrikes = Object.values(strikeData).filter(d => d.score >= 70).length;
+      const missedCount = missedStrikes.length;
+      
+      document.getElementById('stat-active').textContent = activeStrikes;
+      document.getElementById('stat-missed').textContent = missedCount;
+    }
+    
+    // SET LIVE STATUS
+    function setLiveStatus(isLive) {
+      const indicator = document.getElementById('liveIndicator');
+      if (isLive) {
+        indicator.classList.remove('offline');
+      } else {
+        indicator.classList.add('offline');
+      }
+    }
+    
+    // FILTER MARKERS
+    function filterMarkers(type) {
+      currentView = type;
+      
+      surfMarkers.forEach(m => {
+        if (type === 'all' || type === 'surf') {
+          map.addLayer(m.marker);
+        } else {
+          map.removeLayer(m.marker);
+        }
+      });
+      
+      skiMarkers.forEach(m => {
+        if (type === 'all' || type === 'ski') {
+          map.addLayer(m.marker);
+        } else {
+          map.removeLayer(m.marker);
+        }
+      });
+    }
+    
+    // EVENT LISTENERS
+    document.getElementById('seg-all').addEventListener('click', function() {
+      document.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      filterMarkers('all');
+    });
+    
+    document.getElementById('seg-surf').addEventListener('click', function() {
+      document.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      filterMarkers('surf');
+    });
+    
+    document.getElementById('seg-ski').addEventListener('click', function() {
+      document.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      filterMarkers('ski');
+    });
+    
+    document.getElementById('toggle-missed').addEventListener('click', function() {
+      this.classList.toggle('active');
+      showMissedStrikes = !showMissedStrikes;
+      // TODO: Implement missed strikes visualization
+    });
+    
+    document.getElementById('toggle-highconf').addEventListener('click', function() {
+      this.classList.toggle('active');
+      showHighConfOnly = !showHighConfOnly;
+      // TODO: Filter markers by confidence
+    });
+    
+    // INIT
+    window.addEventListener('load', () => {
+      console.log('🚀 Window loaded, initializing Genesis Strike...');
+      setTimeout(initMap, 100);
+    });
+  </script>
+</body>
+</html>
