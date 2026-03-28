@@ -233,17 +233,14 @@ app.get('/api/resorts/:id', async (req, res) => {
   });
 });
 
-// Initialize and start server
-async function init() {
-  await fetchAllBuoys();
-  
-  // Update buoys every 5 minutes
-  setInterval(fetchAllBuoys, 5 * 60 * 1000);
-  
-  app.listen(PORT, () => {
-    console.log(`🌊 Swell Strike API running on port ${PORT}`);
-    console.log(`Last update: ${lastUpdate}`);
+// init map immediately
+// THEN later:
+useEffect(() => {
+  if (!mapRef.current || !zones) return;
+
+  zones.forEach(z => {
+    L.circle([z.lat, z.lng]).addTo(mapRef.current);
   });
-}
+}, [zones]);
 
 init();
