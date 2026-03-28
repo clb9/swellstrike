@@ -1,16 +1,16 @@
 // server.js - Backend API for Swell Strike
 // Run with: node server.js
-
+ 
 import express from 'express';
 import cors from 'cors';
 import fetch from 'node-fetch';
-
+ 
 const app = express();
 const PORT = process.env.PORT || 3001;
-
+ 
 app.use(cors());
 app.use(express.json());
-
+ 
 // NOAA Buoy locations
 const BUOYS = {
   // California
@@ -20,7 +20,7 @@ const BUOYS = {
   '46086': { name: 'San Clemente', lat: 32.491, lon: -118.034, region: 'Southern CA' },
   // ... (abbreviated for example)
 };
-
+ 
 // Ski resorts
 const SKI_RESORTS = [
   { id: 'whistler', name: 'Whistler Blackcomb', lat: 50.116, lon: -122.949, region: 'BC' },
@@ -28,25 +28,25 @@ const SKI_RESORTS = [
   { id: 'alta', name: 'Alta', lat: 40.588, lon: -111.638, region: 'UT' },
   // ... more resorts
 ];
-
+ 
 // In-memory cache (use Redis in production)
 let buoyCache = {};
 let skiCache = {};
 let lastUpdate = null;
-
+ 
 // Parse NOAA buoy data
 function parseBuoyData(text, buoyId) {
   const lines = text.split('\n').filter(l => l.trim());
   if (lines.length < 3) return null;
-
+ 
   const headers = lines[0].split(/\s+/);
   const latest = lines[2].split(/\s+/);
-
+ 
   const data = {};
   headers.forEach((header, i) => {
     data[header] = latest[i];
   });
-
+ 
   return {
     buoyId,
     waveHeight: parseFloat(data.WVHT) || 0,
@@ -60,7 +60,7 @@ function parseBuoyData(text, buoyId) {
     timestamp: new Date(`${data.YY}-${data.MM}-${data.DD}T${data.hh}:${data.mm}:00Z`),
   };
 }
-
+ 
 // Calculate strike score for surf
 function calculateSurfScore(data) {
   let score = 0;
@@ -83,7 +83,7 @@ function calculateSurfScore(data) {
   
   return Math.max(0, Math.min(100, score));
 }
-
+ 
 // Fetch all buoy data
 async function fetchAllBuoys() {
   console.log('Fetching buoy data...');
@@ -111,7 +111,7 @@ async function fetchAllBuoys() {
   lastUpdate = new Date();
   console.log(`Updated ${Object.keys(results).length} buoys`);
 }
-
+ 
 // Fetch weather data for ski resorts (using weather.gov for US)
 async function fetchSkiWeather(lat, lon) {
   try {
@@ -132,7 +132,7 @@ async function fetchSkiWeather(lat, lon) {
     return null;
   }
 }
-
+ 
 // Calculate strike score for skiing
 function calculateSkiScore(weatherData, snowData) {
   let score = 0;
@@ -152,9 +152,9 @@ function calculateSkiScore(weatherData, snowData) {
   
   return Math.max(0, Math.min(100, score));
 }
-
+ 
 // API Routes
-
+ 
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'healthy',
@@ -162,7 +162,7 @@ app.get('/api/health', (req, res) => {
     buoysCount: Object.keys(buoyCache).length,
   });
 });
-
+ 
 app.get('/api/strikes', (req, res) => {
   const strikes = [];
   
@@ -193,7 +193,7 @@ app.get('/api/strikes', (req, res) => {
     updated: lastUpdate,
   });
 });
-
+ 
 app.get('/api/buoys', (req, res) => {
   res.json({
     buoys: buoyCache,
@@ -201,7 +201,7 @@ app.get('/api/buoys', (req, res) => {
     updated: lastUpdate,
   });
 });
-
+ 
 app.get('/api/buoys/:id', (req, res) => {
   const buoy = buoyCache[req.params.id];
   if (!buoy) {
@@ -209,14 +209,14 @@ app.get('/api/buoys/:id', (req, res) => {
   }
   res.json(buoy);
 });
-
+ 
 app.get('/api/resorts', (req, res) => {
   res.json({
     resorts: SKI_RESORTS,
     count: SKI_RESORTS.length,
   });
 });
-
+ 
 app.get('/api/resorts/:id', async (req, res) => {
   const resort = SKI_RESORTS.find(r => r.id === req.params.id);
   if (!resort) {
@@ -232,15 +232,18 @@ app.get('/api/resorts/:id', async (req, res) => {
     // In production, add real snow data here
   });
 });
-
-// init map immediately
-// THEN later:
-useEffect(() => {
-  if (!mapRef.current || !zones) return;
-
-  zones.forEach(z => {
-    L.circle([z.lat, z.lng]).addTo(mapRef.current);
+ 
+// Initialize and start server
+async function init() {
+  await fetchAllBuoys();
+  
+  // Update buoys every 5 minutes
+  setInterval(fetchAllBuoys, 5 * 60 * 1000);
+  
+  app.listen(PORT, () => {
+    console.log(`🌊 Swell Strike API running on port ${PORT}`);
+    console.log(`Last update: ${lastUpdate}`);
   });
-}, [zones]);
-
+}
+ 
 init();
